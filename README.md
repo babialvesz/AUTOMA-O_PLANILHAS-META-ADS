@@ -1,8 +1,8 @@
-Automação de Relatórios Semanais do Meta Ads para Google Sheets
+**Automação de Relatórios Semanais do Meta Ads para Google Sheets**
 
 Este projeto contém um fluxo do n8n desenvolvido para automatizar a extração, transformação e gravação de dados do Meta Ads em uma planilha no Google Sheets. O objetivo é substituir o trabalho manual de consolidação semanal por um processo totalmente automatizado.
 
-Objetivo
+**Objetivo**
 
 Consultar dados de campanhas no Meta Ads por período.
 
@@ -14,7 +14,7 @@ Atualizar automaticamente abas específicas em uma planilha do Google Sheets.
 
 Manter o relatório sempre consistente e padronizado.
 
-Tecnologias utilizadas
+**Tecnologias utilizadas**
 
 n8n
 
@@ -24,7 +24,7 @@ Google Sheets API
 
 JavaScript (em Code Nodes)
 
-Descrição geral do fluxo
+**Descrição geral do fluxo**
 
 Cálculo do período semanal
 Um script determina automaticamente o intervalo da semana anterior e gera o código de período usado no relatório.
@@ -43,12 +43,12 @@ O fluxo gera duas tabelas:
 
 Consolidado por semana
 
-Gasto total por unidade
+Gasto total por cliente
 
 Atualização da planilha
 Antes de inserir novos dados, os intervalos relevantes são limpos. Em seguida, as novas linhas são escritas nas abas correspondentes.
 
-Configuração necessária
+**Configuração necessária**
 
 Antes de usar o fluxo, configure:
 
