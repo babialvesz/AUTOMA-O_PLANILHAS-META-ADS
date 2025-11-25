@@ -1,0 +1,689 @@
+{
+  "name": "AUTOMAÇÃO_PLANILHAS/META ADS",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Calcula a semana ANTERIOR (domingo a sábado) em relação a hoje\n\nconst hoje = new Date();\n\n// vamos pegar ontem como \"referência\"\nconst ref = new Date(hoje);\nref.setDate(ref.getDate() - 1);\n\n// achar o domingo da semana anterior\nconst diaSemana = ref.getDay(); // 0 = domingo, 6 = sábado\nconst ultimoDomingo = new Date(ref);\nultimoDomingo.setDate(ref.getDate() - diaSemana); // domingo desta semana\n// domingo da semana ANTERIOR\nultimoDomingo.setDate(ultimoDomingo.getDate() - 7);\n\n// sábado da semana ANTERIOR = domingo + 6\nconst ultimoSabado = new Date(ultimoDomingo);\nultimoSabado.setDate(ultimoDomingo.getDate() + 6);\n\n// helper pra formatar AAAA-MM-DD\nfunction fmt(d) {\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, '0');\n  const day = String(d.getDate()).padStart(2, '0');\n  return `${y}-${m}-${day}`;\n}\n\n// helper pra semana do mês (S01, S02...)\nfunction getWeekOfMonth(d) {\n  const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);\n  const pastDays = d.getDate() + firstDay.getDay() - 1;\n  return Math.floor(pastDays / 7) + 1;\n}\n\nconst dataInicioApi = fmt(ultimoDomingo); // para a API\nconst dataFimApi = fmt(ultimoSabado);     // para a API\n\n// você pode usar as mesmas datas \"humanas\" (ou formatar diferente se quiser)\nconst dataInicio = dataInicioApi;\nconst dataFim = dataFimApi;\n\n// periodCode: AAAA.MM-Sxx (ex: 2025.11-S02)\nconst ano = ultimoDomingo.getFullYear();\nconst mes = String(ultimoDomingo.getMonth() + 1).padStart(2, '0');\nconst semana = String(getWeekOfMonth(ultimoDomingo)).padStart(2, '0');\nconst periodCode = `${ano}.${mes}-S${semana}`;\n\nreturn [\n  {\n    json: {\n      dataInicioApi,\n      dataFimApi,\n      dataInicio,\n      dataFim,\n      periodCode,\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1440,
+        608
+      ],
+      "id": "",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v19.0/act_{{AD_ACCOUNT_ID}}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "{{META_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "level",
+              "value": "campaign"
+            },
+            {
+              "name": "fields",
+              "value": "campaign_name,spend,results"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ JSON.stringify({\n  since: $json.dataInicioApi,\n  until: $json.dataFimApi\n}) }}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1232,
+        608
+      ],
+      "id": "",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================================================================\n//  Transformação dos dados vindo da API do Meta para itens individuais\n// ======================================================================\n\nconst rawItems = $input.all();\n\n// 1) Achatar o retorno do HTTP em vários items simples\nlet items = [];\n\nfor (const item of rawItems) {\n  const j = item.json;\n  if (Array.isArray(j.data)) {\n    for (const row of j.data) items.push({ json: row });\n  } else {\n    items.push({ json: j });\n  }\n}\n\n// ======================================================================\n//  Cálculo da semana ANTERIOR (domingo a sábado)\n// ======================================================================\nfunction calcPeriodoSemanaAnterior() {\n  const hoje = new Date();\n\n  const ref = new Date(hoje);\n  ref.setDate(ref.getDate() - 1);\n\n  const diaSemana = ref.getDay();\n  const domingoEsta = new Date(ref);\n  domingoEsta.setDate(ref.getDate() - diaSemana);\n\n  const domingoAnterior = new Date(domingoEsta);\n  domingoAnterior.setDate(domingoEsta.getDate() - 7);\n\n  const sabadoAnterior = new Date(domingoAnterior);\n  sabadoAnterior.setDate(domingoAnterior.getDate() + 6);\n\n  function fmt(d) {\n    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(\n      d.getDate()\n    ).padStart(2, '0')}`;\n  }\n\n  function getWeekOfMonth(d) {\n    const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);\n    const pastDays = d.getDate() + firstDay.getDay() - 1;\n    return Math.floor(pastDays / 7) + 1;\n  }\n\n  const ano = domingoAnterior.getFullYear();\n  const mes = String(domingoAnterior.getMonth() + 1).padStart(2, '0');\n  const semana = String(getWeekOfMonth(domingoAnterior)).padStart(2, '0');\n  const periodCode = `${ano}.${mes}-S${semana}`;\n\n  return {\n    dataInicio: fmt(domingoAnterior),\n    dataFim: fmt(sabadoAnterior),\n    periodCode,\n  };\n}\n\nconst periodo = calcPeriodoSemanaAnterior();\n\n// ======================================================================\n//  Mapa de abas do Google Sheets (nomes anonimizados)\n// ======================================================================\nconst mapaSheet = {\n  DF01: 'UNIDADE_DF01',\n  DF02: 'UNIDADE_DF02',\n  DF03: 'UNIDADE_DF03',\n  DF04: 'UNIDADE_DF04',\n  DF05: 'UNIDADE_DF05',\n  DF06: 'UNIDADE_DF06',\n  DF07: 'UNIDADE_DF07',\n  DF08: 'UNIDADE_DF08',\n  DF09: 'UNIDADE_DF09',\n  DF10: 'UNIDADE_DF10',\n  DF11: 'UNIDADE_DF11',\n  DF12: 'UNIDADE_DF12',\n  DF13: 'UNIDADE_DF13',\n  DF14: 'UNIDADE_DF14',\n  DF15: 'UNIDADE_DF15',\n  DF16: 'UNIDADE_DF16',\n  UNIFICADF: 'UNIDADES_DF_UNIFICADAS',\n  PARAGUAI: 'UNIDADES_EXTERIOR',\n  DF00: 'UNIDADE_DEFAULT' // fallback\n};\n\n// ======================================================================\n//  Mapa de tipos de campanha\n// ======================================================================\nconst mapaTipo = {\n  CD: 'Cadastro',\n  VD: 'Venda',\n  MS: 'Mensagem',\n  DS: 'Distribuição',\n  OT: 'Outro',\n};\n\n// ======================================================================\n//  Função para extrair cliente e tipo dos colchetes\n//  Ex: \"CA.01VD008- [DF05] [VD][\\\"AUT\\\"] ...\"\n//      1º colchete -> DF05   (cliente)\n//      2º colchete -> VD     (tipo)\n// ======================================================================\nfunction extrairCodigos(nomeCampanha) {\n  const matches = [...(nomeCampanha || '').matchAll(/\\[([^\\]]+)\\]/g)];\n\n  const clienteCode = matches[0]?.[1] || 'DF00';   // [DF05]\n  const tipoCode = matches[1]?.[1] || 'OT';        // [VD]\n\n  return { clienteCode, tipoCode };\n}\n\n// ======================================================================\n//  Converter para os itens finais\n// ======================================================================\nconst newItems = items.map((item) => {\n  const json = item.json;\n\n  const nomeCampanha = json.campaign_name || json.name || '';\n\n  // Extrair códigos\n  const { clienteCode, tipoCode } = extrairCodigos(nomeCampanha);\n\n  const sheetName = mapaSheet[clienteCode] || mapaSheet.DF00;\n  const tipoCompleto = mapaTipo[tipoCode] || mapaTipo.OT;\n\n  // Código da campanha: prefixo antes do primeiro \"[\"\n  let codCampanha = nomeCampanha;\n  if (nomeCampanha.includes('[')) {\n    codCampanha = nomeCampanha.split('[')[0].trim();\n  }\n\n  const valorGasto = Number(json.spend || 0);\n\n  // ======================================================\n  //  RESULTADO REAL: soma de todos os values dentro de results[*].values[*]\n  // ======================================================\n  let resultadoReal = 0;\n\n  if (Array.isArray(json.results)) {\n    for (const r of json.results) {\n      if (Array.isArray(r.values)) {\n        for (const v of r.values) {\n          resultadoReal += Number(v.value || 0);\n        }\n      }\n    }\n  } else if (json.results !== undefined) {\n    // fallback caso algum dia venha só um número direto\n    resultadoReal = Number(json.results) || 0;\n  }\n\n  return {\n    json: {\n      sheetName,\n      codCampanha,\n      nomeCampanha,\n      tipoCompleto,\n      valorGasto,\n      resultadoReal,\n      periodCode: periodo.periodCode,\n      dataInicio: periodo.dataInicio,\n      dataFim: periodo.dataFim,\n    },\n  };\n});\n\nreturn newItems;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        608
+      ],
+      "id": "8a7bfd08-32e0-4ea1-ab99-5bdb826598b4",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "02c6cfae-5fdf-4613-b2d2-8031bb64bb7f",
+              "name": "Período",
+              "value": "={{ $json.periodCode }}",
+              "type": "string"
+            },
+            {
+              "id": "22e0ad22-3aa6-4a50-acfc-29daa239e197",
+              "name": "Data de ínício",
+              "value": "={{ $json.dataInicio }}",
+              "type": "string"
+            },
+            {
+              "id": "9524c7f7-16b4-4a9c-8b5e-6277ca4355f7",
+              "name": "Data final",
+              "value": "={{ $json.dataFim }}",
+              "type": "string"
+            },
+            {
+              "id": "6845ca44-9c9a-49e9-b9f3-1b3f9eb92379",
+              "name": "Código da Campanha",
+              "value": "={{ $json.codCampanha }}",
+              "type": "string"
+            },
+            {
+              "id": "f8b34103-82ab-4c43-a8a9-84cd86239e09",
+              "name": "Nome da Campanha",
+              "value": "={{ $json.nomeCampanha }}",
+              "type": "string"
+            },
+            {
+              "id": "7c85c78e-da66-49f8-acf1-958efa5e39c2",
+              "name": "Tipo de Campanha",
+              "value": "={{ $json.tipoCompleto }}",
+              "type": "string"
+            },
+            {
+              "id": "aa836d54-5cb9-440c-b69d-0ab21dc9717a",
+              "name": "Valor Gasto (Período)",
+              "value": "={{ $json.valorGasto }}",
+              "type": "number"
+            },
+            {
+              "id": "98f001f0-313c-4af1-942d-961bb10a15a4",
+              "name": "Resultado real",
+              "value": "={{ $json.resultadoReal }}",
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -816,
+        608
+      ],
+      "id": "7684d02a-1345-4429-b499-57bd79408e4e",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "{{GOOGLE_SHEET_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.sheetName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Período",
+              "displayName": "Período",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Data de ínício",
+              "displayName": "Data de ínício",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Data final",
+              "displayName": "Data final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Código da Campanha",
+              "displayName": "Código da Campanha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nome da Campanha",
+              "displayName": "Nome da Campanha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tipo de Campanha",
+              "displayName": "Tipo de Campanha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Valor Gasto (Período)",
+              "displayName": "Valor Gasto (Período)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Resultado real",
+              "displayName": "Resultado real",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "locationDefine": {
+            "values": {
+              "headerRow": 2
+            }
+          },
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -320,
+        624
+      ],
+      "id": "82da2ad0-0a1f-4ce9-857a-56088960f74a",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "{{GOOGLE_SHEETS_CREDENTIAL_ID}}",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -608,
+        608
+      ],
+      "id": "1039e078-27c3-4015-afda-aab106c926f0",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        624
+      ],
+      "id": "692fa434-6911-48bd-9b40-425068a93857"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega todos os itens vindos do node anterior (Edit Fields)\nconst items = $input.all();\n\n/**\n * Campos vindos do Edit Fields\n */\nconst FIELD_PERIOD   = 'periodCode';\nconst FIELD_DT_INI   = 'dataInicio';\nconst FIELD_DT_FIM   = 'dataFim';\nconst FIELD_UNIDADE  = 'sheetName';\nconst FIELD_GASTO    = 'valorGasto';\nconst FIELD_TIPO     = 'tipoCompleto';   // Venda, Cadastro, Distribuição...\nconst FIELD_RESULT   = 'resultadoReal';  // quantidade (vendas, pré, dist)\n\n/**\n * Converte \"2025.11-S03\" -> \"2025.nov-S3\" (como na planilha)\n */\nfunction formatPeriodo(periodCode) {\n  if (!periodCode) return '';\n\n  const [ano, resto] = periodCode.split('.');\n  if (!resto) return periodCode;\n\n  const [mesNumStr, semanaBruta] = resto.split('-'); // ex: \"11\" e \"S03\"\n  const mesIndex = Number(mesNumStr) - 1;\n  const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun',\n                 'jul', 'ago', 'set', 'out', 'nov', 'dez'];\n\n  if (mesIndex < 0 || mesIndex > 11) return periodCode;\n\n  // \"S03\" -> \"S3\"\n  const semana = semanaBruta.replace(/^S0?/, 'S');\n\n  return `${ano}.${MESES[mesIndex]}-${semana}`;\n}\n\n/**\n * Formata \"2025-11-09\" -> \"09/11/2025\"\n */\nfunction formatDateBR(dateStr) {\n  if (!dateStr) return '';\n  const d = new Date(dateStr);\n  if (isNaN(d)) return '';\n  const dia = String(d.getDate()).padStart(2, '0');\n  const mes = String(d.getMonth() + 1).padStart(2, '0');\n  const ano = d.getFullYear();\n  return `${dia}/${mes}/${ano}`;\n}\n\n// ----------------- AGREGAÇÃO POR (Período + Unidade) -----------------\n\nconst map = {};\n\nfor (const item of items) {\n  const row = item.json;\n\n  const periodCode = row[FIELD_PERIOD];\n  const periodoFmt = formatPeriodo(periodCode);\n  const dtIni  = row[FIELD_DT_INI];\n  const dtFim  = row[FIELD_DT_FIM];\n  const unidade = row[FIELD_UNIDADE];\n  const gasto   = Number(row[FIELD_GASTO] || 0);\n  const tipo    = (row[FIELD_TIPO] || '').trim();\n  const qtd     = Number(row[FIELD_RESULT] || 0);\n\n  if (!periodCode || !unidade) continue;\n\n  const key = `${periodCode}__${unidade}`;\n\n  if (!map[key]) {\n    map[key] = {\n      periodo: periodoFmt,\n      data_inicio: dtIni,\n      data_final: dtFim,\n      unidade,\n      valor_gasto: 0,\n      vendas: 0,\n      pre_inscricoes: 0,\n      distribuicao: 0,\n    };\n  }\n\n  const agg = map[key];\n\n  // sempre soma o gasto\n  agg.valor_gasto += gasto;\n\n  // distribui o resultadoReal nos campos certos\n  if (/^venda$/i.test(tipo)) {\n    agg.vendas += qtd;\n  } else if (/^cadastro$/i.test(tipo) || /^cd$/i.test(tipo)) {\n    agg.pre_inscricoes += qtd;\n  } else if (/^distribui/.test(tipo.toLowerCase()) || /^ds$/i.test(tipo)) {\n    agg.distribuicao += qtd;\n  } else {\n    // se vier outro tipo não mapeado, por enquanto cai em vendas\n    agg.vendas += qtd;\n  }\n}\n\n// ----------------- GERAR LINHAS + LINHA \"TOTAL\" -----------------\n\nconst linhas = [];\nlet totalGasto = 0;\nlet totalVendas = 0;\nlet totalPre = 0;\nlet totalDist = 0;\n\n// Ordena por período e unidade\nconst rowsAgg = Object.values(map).sort((a, b) => {\n  if (a.periodo === b.periodo) {\n    return a.unidade.localeCompare(b.unidade, 'pt-BR');\n  }\n  return a.periodo.localeCompare(b.periodo, 'pt-BR');\n});\n\n// Aqui já usamos os NOMES EXATOS do cabeçalho da planilha\nfor (const r of rowsAgg) {\n  totalGasto += r.valor_gasto;\n  totalVendas += r.vendas;\n  totalPre += r.pre_inscricoes;\n  totalDist += r.distribuicao;\n\n  linhas.push({\n    \"Período\": r.periodo,\n    \"Data de ínício\": formatDateBR(r.data_inicio),\n    \"Data final\": formatDateBR(r.data_final),\n    \"Unidade\": r.unidade,\n    \"Valor Gasto\": Number(r.valor_gasto.toFixed(2)),\n    \"Vendas\": r.vendas,\n    \"Pré Inscrições\": r.pre_inscricoes,\n    \"Distribuição\": r.distribuicao,\n  });\n}\n\n// Linha TOTAL\nlinhas.push({\n  \"Período\": \"\",\n  \"Data de ínício\": \"\",\n  \"Data final\": \"\",\n  \"Unidade\": \"TOTAL\",\n  \"Valor Gasto\": Number(totalGasto.toFixed(2)),\n  \"Vendas\": totalVendas,\n  \"Pré Inscrições\": totalPre,\n  \"Distribuição\": totalDist,\n});\n\n// Retorna para o próximo node\nreturn linhas.map(l => ({ json: l }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        304
+      ],
+      "id": "c84f06f8-7c20-4520-a4df-07eb45e0a60b",
+      "name": "Agrupar por semana"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega todos os itens vindos do node anterior (Edit Fields)\nconst items = $input.all();\n\n/**\n * Campos vindos do Edit Fields\n */\nconst FIELD_UNIDADE  = 'sheetName';\nconst FIELD_GASTO    = 'valorGasto';\nconst FIELD_TIPO     = 'tipoCompleto';   // Venda, Cadastro, Distribuição...\nconst FIELD_RESULT   = 'resultadoReal';  // quantidade (vendas, pré, dist)\n\n/**\n * Mapa de agregação por unidade\n */\nconst map = {};\n\nfor (const item of items) {\n  const row = item.json;\n\n  const unidade = row[FIELD_UNIDADE];\n  const gasto   = Number(row[FIELD_GASTO] || 0);\n  const tipo    = (row[FIELD_TIPO] || '').trim();\n  const qtd     = Number(row[FIELD_RESULT] || 0);\n\n  if (!unidade) continue;\n\n  if (!map[unidade]) {\n    map[unidade] = {\n      unidade,\n      valor_gasto: 0,\n      vendas: 0,\n      pre_inscricoes: 0,\n      distribuicao: 0,\n    };\n  }\n\n  const agg = map[unidade];\n\n  // sempre soma o gasto\n  agg.valor_gasto += gasto;\n\n  // distribui o resultadoReal nos campos certos\n  if (/^venda$/i.test(tipo)) {\n    agg.vendas += qtd;\n  } else if (/^cadastro$/i.test(tipo) || /^cd$/i.test(tipo)) {\n    agg.pre_inscricoes += qtd;\n  } else if (/^distribui/.test(tipo.toLowerCase()) || /^ds$/i.test(tipo)) {\n    agg.distribuicao += qtd;\n  } else {\n    // se vier outro tipo não mapeado, por enquanto cai em vendas\n    agg.vendas += qtd;\n  }\n}\n\n// --------- GERAR LINHAS + LINHA TOTAL (com nomes IGUAIS AO CABEÇALHO) ---------\n\nconst linhas = [];\nlet totalGasto = 0;\nlet totalVendas = 0;\nlet totalPre = 0;\nlet totalDist = 0;\n\nconst rowsAgg = Object.values(map).sort((a, b) =>\n  a.unidade.localeCompare(b.unidade, 'pt-BR')\n);\n\nfor (const r of rowsAgg) {\n  totalGasto += r.valor_gasto;\n  totalVendas += r.vendas;\n  totalPre += r.pre_inscricoes;\n  totalDist += r.distribuicao;\n\n  linhas.push({\n    \"Unidade\": r.unidade,\n    \"Valor Gasto\": Number(r.valor_gasto.toFixed(2)),\n    \"Vendas\": r.vendas,\n    \"Pré Inscrições\": r.pre_inscricoes,\n    \"Distribuição\": r.distribuicao,\n  });\n}\n\n// Linha TOTAL (igual à da planilha)\nlinhas.push({\n  \"Unidade\": \"TOTAL\",\n  \"Valor Gasto\": Number(totalGasto.toFixed(2)),\n  \"Vendas\": totalVendas,\n  \"Pré Inscrições\": totalPre,\n  \"Distribuição\": totalDist,\n});\n\nreturn linhas.map(l => ({ json: l }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -16
+      ],
+      "id": "755f2f53-5474-4898-b702-24d9518509e2",
+      "name": "Agrupar gasto total"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "{{GOOGLE_SHEET_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "POR SEMANA",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "Divisão por cada semana"
+          ],
+          "schema": [
+            {
+              "id": "Período",
+              "displayName": "Período",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Data de ínício",
+              "displayName": "Data de ínício",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Data final",
+              "displayName": "Data final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Unidade",
+              "displayName": "Unidade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Valor Gasto",
+              "displayName": "Valor Gasto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vendas",
+              "displayName": "Vendas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Pré Inscrições",
+              "displayName": "Pré Inscrições",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Distribuição",
+              "displayName": "Distribuição",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "locationDefine": {
+            "values": {
+              "headerRow": 2
+            }
+          },
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -416,
+        304
+      ],
+      "id": "3718897f-bdea-435b-ae9c-b7bb88df4b2c",
+      "name": "Append row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "{{GOOGLE_SHEETS_CREDENTIAL_ID}}",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "{{GOOGLE_SHEET_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "GASTO TOTAL",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Unidade",
+              "displayName": "Unidade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Valor Gasto",
+              "displayName": "Valor Gasto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vendas",
+              "displayName": "Vendas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Pré Inscrições",
+              "displayName": "Pré Inscrições",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Distribuição",
+              "displayName": "Distribuição",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "locationDefine": {
+            "values": {
+              "headerRow": 2
+            }
+          },
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -224,
+        -16
+      ],
+      "id": "856e3629-e2ad-4a33-9cbf-7bbea583477f",
+      "name": "Append row in sheet2",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "{{GOOGLE_SHEETS_CREDENTIAL_ID}}",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "clear",
+        "documentId": {
+          "__rl": true,
+          "value": "{{GOOGLE_SHEET_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "GASTO TOTAL",
+          "mode": "name"
+        },
+        "clear": "specificRange",
+        "range": "A3:E30"
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -432,
+        -16
+      ],
+      "id": "33bbbe6c-7622-4b24-bcdd-164d9b9cde8c",
+      "name": "Clear sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "{{GOOGLE_SHEETS_CREDENTIAL_ID}}",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Agrupar por semana",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Agrupar gasto total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Replace Me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupar por semana": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupar gasto total": {
+      "main": [
+        [
+          {
+            "node": "Clear sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear sheet": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b95e2cf9-ec3a-4afd-9d3f-70e332b5ba33",
+  "meta": {
+    "instanceId": "{{INSTANCE_ID}}"
+  },
+  "id": "q7MrPRi5PolaKchz",
+  "tags": []
+}
